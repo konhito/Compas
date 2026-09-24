@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job Compass</title>
+<style>
+:root{color-scheme:dark;--ink:#eaece6;--muted:#a9b4aa;--accent:#dcf99b;--line:#303c34;--panel:#19241e}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 80% 0,#253b2d,transparent 50%),#101913;color:var(--ink);font:15px/1.55 system-ui,sans-serif}
+header,main{max-width:1110px;margin:auto;padding:24px}header{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:12px;font-weight:700}.icon{background:var(--accent);color:#172715;border-radius:50%;display:grid;place-items:center;width:34px;height:34px;font-size:22px}
+header a,.job a{color:var(--accent)}.intro{padding:45px 0 30px;max-width:690px}h1{font:normal clamp(46px,8vw,89px)/.95 Georgia,serif;letter-spacing:-.065em;margin:0 0 18px}h1 em{color:var(--accent)}p{color:var(--muted);margin:.4em 0 1em}.layout{display:grid;grid-template-columns:285px 1fr;gap:20px;align-items:start}.panel,.job{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px}h2{font-size:17px;margin:0 0 16px}label{display:block;font-size:13px;color:var(--muted);margin:13px 0 6px}input:not([type=checkbox]),textarea{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:9px;background:#111a15;color:var(--ink);font:inherit}textarea{resize:vertical;min-height:105px}input:focus,textarea:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.check{display:flex;align-items:center;gap:8px;margin:16px 0}button{background:var(--accent);color:#172715;border:0;border-radius:9px;font:inherit;font-weight:700;padding:11px 15px;cursor:pointer}button:disabled{opacity:.55;cursor:wait}.secondary{background:transparent;color:var(--accent);border:1px solid var(--line);width:100%;margin-top:15px}.examples{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0 17px}.examples button{background:#24362a;color:var(--ink);font-size:12px;font-weight:500;padding:6px 10px}.answer{margin-top:18px}.cards{display:grid;gap:10px}.job{background:#121d16;padding:15px}.job strong{display:block;font-size:17px}.job small{color:var(--accent)}#status{min-height:24px;margin:10px 0 0}.history{max-height:180px;overflow:auto;margin-bottom:15px}.history:empty{display:none}.history p{margin:.25em 0}.caption{font-size:12px}@media(max-width:690px){.layout{grid-template-columns:1fr}.intro{padding-top:32px}}
+</style>
+<header><div class="brand"><span class="icon" aria-hidden="true">✦</span> Job Compass</div><a href="/docs">API docs</a></header>
+<main>
+  <section class="intro"><h1>Find work<br>that <em>fits.</em></h1><p>Search by what you want to build. Refine your results in conversation.</p></section>
+  <div class="layout">
+    <form class="panel" id="profile">
+      <h2>Search preferences</h2>
+      <label for="token">Application token</label><input id="token" type="password" autocomplete="off" required>
+      <label for="skills">Skills, separated by commas</label><input id="skills" maxlength="300" placeholder="Python, React, PostgreSQL">
+      <label for="salary">Minimum salary in USD/year</label><input id="salary" type="number" min="0" max="10000000" placeholder="Any">
+      <label class="check"><input id="remote" type="checkbox"> Remote only</label>
+      <button class="secondary" type="button" id="reset">Start a new conversation</button>
+    </form>
+    <section class="panel">
+      <h2>What are you looking for?</h2>
+      <div class="history" id="history" aria-label="Recent conversation"></div>
+      <form id="search">
+        <label for="message">Job search or follow-up</label>
+        <textarea id="message" maxlength="1500" placeholder="Find backend jobs where I can work on data pipelines…" required></textarea>
+        <div class="examples"><button type="button">Python backend roles</button><button type="button">Full-stack roles building AI tools</button></div>
+        <button id="submit">Find matches</button>
+      </form>
+      <p id="status" role="status"></p>
+      <div class="answer" id="answer"></div>
+      <div class="cards" id="cards"></div>
+    </section>
+  </div>
+</main>
+<script>
+const byId = id => document.getElementById(id);
+const statusBox = byId('status');
+let session = null;
+document.querySelectorAll('.examples button').forEach(button => {
+  button.onclick = () => { byId('message').value = button.textContent; byId('message').focus(); };
+});
+function element(tag, text) {
+  const node = document.createElement(tag);
+  node.textContent = text;
+  return node;
+}
+async function request(path, method, body) {
+  const response = await fetch(path, {method, headers:{
+    'Content-Type':'application/json', Authorization:'Bearer '+byId('token').value
+  }, body:JSON.stringify(body)});
+  const data = await response.json();
+  if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Please check the input.');
+  return data;
+}
+byId('reset').onclick = () => {
+  session = null;
+  for (const id of ['history','cards','answer']) byId(id).replaceChildren();
+  statusBox.textContent = 'Next search starts a new conversation.';
+  byId('message').focus();
+};
+byId('search').onsubmit = async event => {
+  event.preventDefault();
+  if (!byId('profile').reportValidity()) return;
+  const message = byId('message').value.trim();
+  if (!message) return;
+  const profile = {skills: byId('skills').value.split(',').map(s=>s.trim()).filter(Boolean).slice(0,30),
+    remote_only:byId('remote').checked, min_salary_usd:byId('salary').valueAsNumber || null};
+  byId('submit').disabled = byId('reset').disabled = true;
+  statusBox.textContent = 'Searching the jobs index…';
+  try {
+    if (!session) session = (await request('/sessions','POST',profile)).id;
+    else await request('/sessions/'+session+'/profile','PUT',profile);
+    const result = await request('/sessions/'+session+'/chat','POST',{message});
+    const history = byId('history');
+    history.append(element('p','You: '+message),element('p','Compass: '+result.summary));
+    while (history.children.length > 12) history.firstElementChild.remove();
+    history.scrollTop = history.scrollHeight;
+    byId('answer').textContent = result.summary;
+    byId('cards').replaceChildren(...result.jobs.map(job => {
+      const card = element('article','');
+      card.className = 'job';
+      card.append(element('strong',job.title),element('small',job.company + (job.remote ? ' · Remote' : '')));
+      const salary = job.salary_usd == null ? 'Salary undisclosed' :
+        new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(job.salary_usd) + '/year';
+      card.append(element('p',salary + (job.matched_skills.length ? ' · ' + job.matched_skills.join(', ') : '')));
+      if (job.reason) card.append(element('p',job.reason));
+      const link = element('a','View listing ↗');
+      link.href = job.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      card.append(link);
+      return card;
+    }));
+    byId('message').value = '';
+    statusBox.textContent = '';
+  } catch (error) {
+    statusBox.textContent = error.message;
+  } finally {
+    byId('submit').disabled = byId('reset').disabled = false;
+  }
+};
+</script>
+</html>

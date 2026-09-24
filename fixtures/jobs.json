@@ -1,0 +1,50 @@
+{
+  "jobs": [
+    {
+      "id": "demo-backend",
+      "title": "Backend Software Engineer",
+      "company": "Example Data Studio",
+      "description": "Build event-driven Python APIs and PostgreSQL data pipelines. Work with FastAPI and Docker on a remote team.",
+      "url": "https://example.com/jobs/backend",
+      "skills": [
+        "python",
+        "fastapi",
+        "postgresql",
+        "docker"
+      ],
+      "remote": true,
+      "salary_usd": 72000,
+      "revision": 1
+    },
+    {
+      "id": "demo-frontend",
+      "title": "Frontend Engineer",
+      "company": "Example Interface Labs",
+      "description": "Develop accessible dashboard features with React and TypeScript. Partner with a design team to ship customer-facing experiences.",
+      "url": "https://example.com/jobs/frontend",
+      "skills": [
+        "react",
+        "typescript"
+      ],
+      "remote": true,
+      "salary_usd": 65000,
+      "revision": 1
+    },
+    {
+      "id": "demo-fullstack",
+      "title": "Full-stack AI Engineer",
+      "company": "Example Workflow Studio",
+      "description": "Build AI-assisted workflows and tools with React, TypeScript, Python and PostgreSQL. Investigate production issues and evaluate model outputs.",
+      "url": "https://example.com/jobs/fullstack",
+      "skills": [
+        "python",
+        "react",
+        "typescript",
+        "postgresql"
+      ],
+      "remote": true,
+      "salary_usd": 85000,
+      "revision": 1
+    }
+  ]
+}

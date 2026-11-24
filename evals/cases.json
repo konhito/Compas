@@ -1,0 +1,5 @@
+[
+  {"name":"backend context","semantic":["backend","frontend","ai"],"lexical":["backend","ai"],"skills":["python","postgresql"],"relevant":["backend","ai"],"expected_first":"backend"},
+  {"name":"frontend preference","semantic":["ai","frontend"],"lexical":["frontend","ai"],"skills":["react","typescript"],"relevant":["frontend"],"expected_first":"frontend"},
+  {"name":"systems preference","semantic":["frontend","backend"],"lexical":["frontend","backend"],"skills":["fastapi","postgresql"],"relevant":["backend"],"expected_first":"backend"}
+]

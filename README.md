@@ -1,37 +1,72 @@
 # Job Compass
 
-Job Compass is an LLM-powered job search app. Tell it what you want to build, set your preferences, and refine the results in a follow-up. The UI and API are served by FastAPI.
+**Search by what you want to build, follow up in plain English, and keep a shortlist.**
 
-| Capability | Implementation |
-| --- | --- |
-| Tool use and memory | The model calls a typed search tool. PostgreSQL retains the profile and six recent exchanges per session, including IDs and titles from earlier recommendations. |
-| Search at scale | pgvector HNSW retrieves semantic candidates and a GIN index supports PostgreSQL full-text search. Reciprocal rank fusion merges the results, then matched skills adjust the ordering. Remote and salary filters apply before reranking. |
-| Changing listings | Submit feed batches with stable IDs and increasing revisions. Older updates are ignored and inactive revisions remove listings from search without allowing stale events to resurrect them. |
-| LLM quality | The service validates recommendation IDs, retries malformed output once, and falls back to ranked listings. Job cards take facts from the index. Tests cover personalization and unsupported recommendations. |
-| Reliability | Docker Compose, a database readiness route, bounded connection pooling and timeouts, a non-root API container, and optimistic concurrency for session writes. |
+Job Compass is a job discovery app built with FastAPI, PostgreSQL, pgvector, and an LLM that calls a typed search tool. Results come from an index that can be updated while the app is running.
+
+## Try this search
+
+1. Add **Python, PostgreSQL, FastAPI** to your skills and turn on **Remote only**.
+2. Ask **“Find remote roles building data pipelines.”**
+3. Follow up with **“Which of those involve AI?”** The agent can use the previous results to understand what “those” means.
+4. Save an interesting result and find it later under **Saved jobs**. The shortlist stays in this browser.
+
+Choose **Search keywords** for a direct database search with the same preference filters and no model call. This mode does not add a conversational turn.
+
+## How a match is made
+
+```mermaid
+flowchart LR
+  A["Search + preferences"] --> B["LLM search tool"]
+  M["Recent conversation"] --> B
+  A --> K["Keyword-only mode"]
+  B --> C["pgvector + full-text retrieval"]
+  K --> D["Full-text retrieval"]
+  C --> E["Rank fusion + skill match"]
+  D --> E
+  E --> F["Validate model picks by job ID"]
+  F --> G["Job cards"]
+  E -->|"Keyword mode"| G
+  G --> H["Browser shortlist"]
+  I["Job feed revisions"] --> J["PostgreSQL index"]
+  J --> C
+  J --> D
+```
+
+- **Retrieval.** HNSW finds semantically similar jobs and PostgreSQL full-text search finds keyword matches. Reciprocal rank fusion combines the candidate lists and matched skills adjust the order. Remote and salary filters apply before ranking.
+- **Memory.** PostgreSQL stores the profile and the six most recent exchanges per session. Versioned writes prevent concurrent requests from silently overwriting each other.
+- **Grounding.** The service checks that every model-selected ID was retrieved. If the model returns invalid picks twice, it displays the highest-ranked listings. Titles, companies, URLs, and salaries come from the index.
+- **Freshness.** Feed batches use stable IDs and increasing revisions. Older events are ignored. An inactive revision removes the job from search and prevents stale events from restoring it.
 
 ## Run locally
 
-1. Copy `.env.example` to `.env`. Set a random `APP_TOKEN` of at least 24 characters and your `OPENAI_API_KEY`.
-2. Run `docker compose up --build`.
-3. Import the included fictional listings. In a PowerShell session, set `$env:APP_TOKEN` to the same token you wrote to `.env`, then run:
+Copy `.env.example` to `.env`. Set a random `APP_TOKEN` of at least 24 characters and an `OPENAI_API_KEY`, then run:
+
+```powershell
+docker compose up --build
+```
+
+In a second terminal, set `$env:APP_TOKEN` to the same value from `.env`, then import the fictional listings:
 
 ```powershell
 curl.exe -X POST http://localhost:8000/jobs -H "Authorization: Bearer $env:APP_TOKEN" -H "Content-Type: application/json" --data-binary "@fixtures/jobs.json"
 ```
 
-4. Open `http://localhost:8000` and enter the application token. Try searching for "Python data pipelines" and follow up with "Which of those involve AI?"
+Open `http://localhost:8000` and enter the application token. The API reference is at `/docs`.
 
-The API is documented at `/docs`. `POST /jobs` takes up to 50 entries per request. Use it from a trusted source connector or scheduled feed job. To close a listing, resend the record with a higher revision and `active: false`. Salary is an annual USD figure from the feed. A salary filter excludes listings without disclosed pay.
+## Evaluate changes
 
-## Verification and deployment
+```powershell
+python -m unittest discover -s tests -v
+python -m evals.ranking
+```
 
-Run `python -m unittest discover -s tests -v` for the deterministic quality checks. They use synthetic records and require no API key. GitHub Actions also checks Python syntax.
+The tests check personalization and rejection of unsupported recommendations. The ranking replay compares semantic-only candidate ordering with personalized hybrid ranking using fixed relevance judgments and **MRR@3** (mean reciprocal rank at three). GitHub Actions runs both checks. For a larger evaluation, capture real candidate lists and label them before tuning ranking weights.
 
-The included deployment is designed for a trusted single-operator instance. The app token grants both chat and ingestion access. For a public deployment, add user authentication with per-user session authorization, separate ingestion permissions, TLS, and request rate limits. Set up database backups and use migrations for schema changes on an existing database. Monitor provider latency, fallback rate, and retrieval recall before tuning ranking weights or serving a larger dataset.
+## Operate the service
 
-Reference: [pgvector indexing and filtered scans](https://github.com/pgvector/pgvector#filtering) · [OpenAI Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)
+`POST /jobs` accepts up to 50 records per batch. To close a listing, send the record with a higher revision and `active: false`. Salary is annual USD. Setting a salary floor excludes listings whose pay is undisclosed.
 
-## Ranking evaluation
+The Docker setup targets a trusted single-operator instance. It includes a readiness endpoint, bounded connection pooling, request timeouts, and a non-root API container. For public hosting, add per-user authentication and session authorization, separate credentials for ingestion, TLS, rate limits, and database backups. Use a migration process for schema changes to an existing database.
 
-Run `python -m evals.ranking` to compare semantic-only retrieval against hybrid retrieval plus personalization using fixed candidate lists and human-authored relevance labels. It reports mean reciprocal rank at three (MRR@3) and exits nonzero if a case returns the wrong first result. These fixtures check ranking behavior in isolation. To measure retrieval quality on a live corpus, capture candidate lists from representative queries and label them before tuning weights.
+[pgvector filtered searches](https://github.com/pgvector/pgvector#filtering) · [OpenAI Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)

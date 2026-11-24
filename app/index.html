@@ -10,6 +10,7 @@ header,main{max-width:1110px;margin:auto;padding:24px}header{display:flex;align-
 .brand{display:flex;align-items:center;gap:12px;font-weight:700}.icon{background:var(--accent);color:#172715;border-radius:50%;display:grid;place-items:center;width:34px;height:34px;font-size:22px}
 header a,.job a{color:var(--accent)}.intro{padding:45px 0 30px;max-width:690px}h1{font:normal clamp(46px,8vw,89px)/.95 Georgia,serif;letter-spacing:-.065em;margin:0 0 18px}h1 em{color:var(--accent)}p{color:var(--muted);margin:.4em 0 1em}.layout{display:grid;grid-template-columns:285px 1fr;gap:20px;align-items:start}.panel,.job{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px}h2{font-size:17px;margin:0 0 16px}label{display:block;font-size:13px;color:var(--muted);margin:13px 0 6px}input:not([type=checkbox]),textarea{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:9px;background:#111a15;color:var(--ink);font:inherit}textarea{resize:vertical;min-height:105px}input:focus,textarea:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.check{display:flex;align-items:center;gap:8px;margin:16px 0}button{background:var(--accent);color:#172715;border:0;border-radius:9px;font:inherit;font-weight:700;padding:11px 15px;cursor:pointer}button:disabled{opacity:.55;cursor:wait}.secondary{background:transparent;color:var(--accent);border:1px solid var(--line);width:100%;margin-top:15px}.examples{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0 17px}.examples button{background:#24362a;color:var(--ink);font-size:12px;font-weight:500;padding:6px 10px}.answer{margin-top:18px}.cards{display:grid;gap:10px}.job{background:#121d16;padding:15px}.job strong{display:block;font-size:17px}.job small{color:var(--accent)}#status{min-height:24px;margin:10px 0 0}.history{max-height:180px;overflow:auto;margin-bottom:15px}.history:empty{display:none}.history p{margin:.25em 0}.caption{font-size:12px}@media(max-width:690px){.layout{grid-template-columns:1fr}.intro{padding-top:32px}}
 .quiet{background:transparent;color:var(--accent);border:1px solid var(--line);margin-left:6px}
+.shortlist{margin-top:20px;border-top:1px solid var(--line);padding-top:14px}.shortlist summary{cursor:pointer;font-weight:700}.saved-item{display:grid;gap:5px;border-bottom:1px solid var(--line);padding:10px 0}.saved-item a{color:var(--accent)}.saved-item button,.job button{width:max-content;margin:7px 0 0;font-size:12px;padding:5px 9px}
 </style>
 <header><div class="brand"><span class="icon" aria-hidden="true">✦</span> Job Compass</div><a href="/docs">API docs</a></header>
 <main>
@@ -22,6 +23,10 @@ header a,.job a{color:var(--accent)}.intro{padding:45px 0 30px;max-width:690px}h
       <label for="salary">Minimum salary in USD/year</label><input id="salary" type="number" min="0" max="10000000" placeholder="Any">
       <label class="check"><input id="remote" type="checkbox"> Remote only</label>
       <button class="secondary" type="button" id="reset">Start a new conversation</button>
+      <details class="shortlist" id="shortlist">
+        <summary id="saved-count">Saved jobs (0)</summary>
+        <div id="saved-jobs"></div>
+      </details>
     </form>
     <section class="panel">
       <h2>What are you looking for?</h2>
@@ -51,6 +56,63 @@ function element(tag, text) {
   node.textContent = text;
   return node;
 }
+const storageKey = 'job-compass-shortlist-v1';
+const savedJobs = new Map();
+function listingLink(job, text) {
+  const url = new URL(job.url);
+  if (!['https:', 'http:'].includes(url.protocol)) throw new Error('Invalid listing URL');
+  const link = element('a', text);
+  link.href = url.href;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  return link;
+}
+function renderShortlist() {
+  byId('saved-count').textContent = 'Saved jobs (' + savedJobs.size + ')';
+  const rows = [];
+  for (const job of savedJobs.values()) {
+    const row = element('div', '');
+    row.className = 'saved-item';
+    const remove = element('button', 'Remove');
+    remove.type = 'button';
+    remove.className = 'quiet';
+    remove.setAttribute('aria-label', 'Remove ' + job.title);
+    remove.onclick = () => toggleSaved(job);
+    row.append(listingLink(job, job.title + ' · ' + job.company), remove);
+    rows.push(row);
+  }
+  byId('saved-jobs').replaceChildren(...rows);
+  document.querySelectorAll('[data-job-id]').forEach(button => {
+    const saved = savedJobs.has(button.dataset.jobId);
+    button.textContent = saved ? 'Saved' : 'Save job';
+    button.setAttribute('aria-pressed', String(saved));
+  });
+}
+function toggleSaved(job) {
+  if (savedJobs.has(job.id)) savedJobs.delete(job.id);
+  else savedJobs.set(job.id, {id:job.id, title:job.title, company:job.company, url:job.url});
+  renderShortlist();
+  try {
+    localStorage.setItem(storageKey, JSON.stringify([...savedJobs.values()]));
+  } catch {
+    statusBox.textContent = 'Saved for this page only. Browser storage is unavailable.';
+  }
+}
+try {
+  const stored = JSON.parse(localStorage.getItem(storageKey) || '[]');
+  if (Array.isArray(stored)) for (const job of stored) {
+    if (!job || !['id','title','company','url'].every(key => typeof job[key] === 'string')) continue;
+    try {
+      listingLink(job, job.title);
+      savedJobs.set(job.id, job);
+    } catch {
+      // Ignore invalid bookmarks from browser storage.
+    }
+  }
+} catch {
+  // Browser storage can be disabled.
+}
+renderShortlist();
 async function request(path, method, body) {
   const response = await fetch(path, {method, headers:{
     'Content-Type':'application/json', Authorization:'Bearer '+byId('token').value
@@ -98,13 +160,15 @@ byId('search').onsubmit = async event => {
         new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(job.salary_usd) + '/year';
       card.append(element('p',salary + (job.matched_skills.length ? ' · ' + job.matched_skills.join(', ') : '')));
       if (job.reason) card.append(element('p',job.reason));
-      const link = element('a','View listing ↗');
-      link.href = job.url;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      card.append(link);
+      const save = element('button', 'Save job');
+      save.type = 'button';
+      save.className = 'quiet';
+      save.dataset.jobId = job.id;
+      save.onclick = () => toggleSaved(job);
+      card.append(listingLink(job, 'View listing ↗'), document.createElement('br'), save);
       return card;
     }));
+    renderShortlist();
     byId('message').value = '';
     statusBox.textContent = '';
   } catch (error) {

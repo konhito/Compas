@@ -54,6 +54,10 @@ class Feed(BaseModel):
     jobs: list[Job] = Field(min_length=1, max_length=50)
 
 
+class KeywordSearch(Profile):
+    query: str = Field(min_length=1, max_length=1000)
+
+
 class Chat(BaseModel):
     message: str = Field(min_length=1, max_length=1500)
 
@@ -145,18 +149,20 @@ def ingest(feed: Feed):
     return {"applied": applied, "ignored": len(feed.jobs) - applied}
 
 
-def retrieve(query, profile):
-    vector = json.dumps(embed([query])[0])
+def retrieve(query, profile, *, semantic_search=True):
+    vector = json.dumps(embed([query])[0]) if semantic_search else None
     columns = "id,title,company,left(description, 650) AS description,url,skills,remote,salary_usd"
     filters = "active AND (NOT %s OR remote) AND (%s = 0 OR salary_usd >= %s)"
     floor = profile.get("min_salary_usd") or 0
     args = (profile.get("remote_only", False), floor, floor)
     with app.state.db.connection() as conn:
-        conn.execute("SET LOCAL hnsw.iterative_scan = strict_order")
-        semantic = conn.execute(
-            f"SELECT {columns} FROM jobs WHERE {filters} ORDER BY embedding <=> %s::vector LIMIT 40",
-            (*args, vector),
-        ).fetchall()
+        semantic = []
+        if semantic_search:
+            conn.execute("SET LOCAL hnsw.iterative_scan = strict_order")
+            semantic = conn.execute(
+                f"SELECT {columns} FROM jobs WHERE {filters} ORDER BY embedding <=> %s::vector LIMIT 40",
+                (*args, vector),
+            ).fetchall()
         lexical = conn.execute(
             f"""SELECT {columns} FROM jobs WHERE {filters}
                 AND search_text @@ websearch_to_tsquery('english', %s)
@@ -164,6 +170,18 @@ def retrieve(query, profile):
             (*args, query, query),
         ).fetchall()
     return rank(semantic, lexical, profile.get("skills", []))
+
+
+@app.post("/search/keywords", dependencies=[Depends(authorize)])
+def keyword_search(data: KeywordSearch):
+    query = data.query.strip()
+    if not query:
+        raise HTTPException(422, "Enter a keyword query")
+    profile = data.model_dump()
+    profile["skills"] = skill_tags(data.skills)
+    jobs = retrieve(query, profile, semantic_search=False)
+    summary = f"{len(jobs)} keyword matches" if jobs else "No active listings matched your keywords and filters."
+    return {"summary": summary, "jobs": jobs}
 
 
 @app.post("/sessions", dependencies=[Depends(authorize)], status_code=201)

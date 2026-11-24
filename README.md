@@ -31,3 +31,7 @@ Run `python -m unittest discover -s tests -v` for the deterministic quality chec
 The included deployment is designed for a trusted single-operator instance. The app token grants both chat and ingestion access. For a public deployment, add user authentication with per-user session authorization, separate ingestion permissions, TLS, and request rate limits. Set up database backups and use migrations for schema changes on an existing database. Monitor provider latency, fallback rate, and retrieval recall before tuning ranking weights or serving a larger dataset.
 
 Reference: [pgvector indexing and filtered scans](https://github.com/pgvector/pgvector#filtering) · [OpenAI Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)
+
+## Ranking evaluation
+
+Run `python -m evals.ranking` to compare semantic-only retrieval against hybrid retrieval plus personalization using fixed candidate lists and human-authored relevance labels. It reports mean reciprocal rank at three (MRR@3) and exits nonzero if a case returns the wrong first result. These fixtures check ranking behavior in isolation. To measure retrieval quality on a live corpus, capture candidate lists from representative queries and label them before tuning weights.
